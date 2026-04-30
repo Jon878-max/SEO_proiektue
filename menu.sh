@@ -196,9 +196,9 @@ do
     12) nginxatakaTesteatu;;
     21) nginxBerrabiarazi;;
     22) hostbirtualaProbatu;;
-    23)nginxlogakIkuskatu
-    24)ekoizpenzerbitzarianKopiatu
-    25)sshkonexiosaiakerakKontrolatu
+    23)nginxlogakIkuskatu;;
+    24)ekoizpenzerbitzarianKopiatu;;
+    25)sshkonexiosaiakerakKontrolatu;;
     26) menutikIrten;;
     *) ;;
     esac

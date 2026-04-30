@@ -186,6 +186,251 @@ function nginxInstalatu() {
         echo "NGINX dagoeneko instalatuta dago."
     fi
 }
+
+function nginxMatxanJarri(){
+    # systemctl is-active devuelve "active" si está funcionando
+    if [ "$(systemctl is-active nginx)" == "active" ]; then
+        echo "NGINX zerbitzua martxan dago dagoeneko."
+    else
+        echo "NGINX zerbitzua ez dago martxan. Abiarazten..."
+        sudo systemctl start nginx
+        echo "Zerbitzua abiarazi da."
+    fi
+}
+
+function nginxatakaTesteatu(){
+    # Primero nos aseguramos de que netstat (net-tools) esté instalado
+    if ! dpkg -s net-tools > /dev/null 2>&1; then
+        echo "net-tools instalatzen..."
+        sudo apt update && sudo apt install -y net-tools
+    fi
+
+    echo "NGINX entzuten ari den atakak:"
+    # Buscamos procesos que escuchen (l), en formato numérico (n) y el nombre del programa (p)
+    sudo netstat -tulnp | grep nginx
+}
+
+function indexIkusi() {
+    echo "Firefox irekitzen: http://localhost"
+    # Abrimos firefox apuntando a la dirección local
+    firefox http://127.0.0.1 &
+}
+
+function indexPertsonalizatu() {
+    # Definimos la ruta del archivo (Nginx suele usar esta por defecto)
+    local fitxategia="/var/www/html/index.html"
+    local lehenetsia="/var/www/html/index.nginx-debian.html"
+
+    # Borramos el archivo por defecto si existe para que no haya conflictos
+    if [ -f "$lehenetsia" ]; then
+        sudo rm "$lehenetsia"
+    fi
+
+    # Creamos el nuevo index.html usando un Heredoc
+    # IMPORTANTE: Personaliza los datos de abajo
+    sudo bash -c "cat <<EOF > $fitxategia
+<!DOCTYPE html>
+<html lang='eu'>
+<head>
+    <meta charset='UTF-8'>
+    <title>Proiektuaren Index Orria</title>
+    <style>
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid black; padding: 8px; text-align: left; }
+        .burua { font-weight: bold; color: blue; }
+    </style>
+</head>
+<body>
+    <h1>Taldearen Izena: GG</h1>
+    <p>Laborategiko azpitaldea: <strong>Astelehena</strong></p>
+    
+    <h2>Taldekideak</h2>
+    <table>
+        <tr>
+            <th>Izena</th>
+            <th>Abizenak</th>
+            <th>Posta Elektronikoa</th>
+        </tr>
+        <tr>
+            <td>Jon</td>
+            <td>Guibelondo</td>
+            <td>jguibelondo003@ikasle.ehu.eus</td>
+        </tr>
+        <tr>
+            <td>Iago</td>
+            <td>Vazques</td>
+            <td>ivazquez060@ikasle.ehu.eus</td>
+        </tr>
+        <tr>
+            <td>Aimar</td>
+            <td>Zugazaga</td>
+            <td>azugazaga009@ikasle.ehu.eus</td>
+        </tr>
+        </table>
+
+    <h2>Taldeburua</h2>
+    <p class='burua'>Izena: Iago Vazquez</p>
+    <p>Emaila: ivazquez060@ikasle.ehu.eus</p>
+</body>
+</html>
+EOF"
+
+    echo "index.html berria sortu da hemen: $fitxategia"
+    
+    # Abrir el navegador para ver el resultado (como pide el enunciado)
+    firefox http://localhost/index.html &
+}
+
+function gunicornInstalatu() {
+    # Definimos la ruta de la carpeta del proyecto y el entorno virtual
+    # Ajusta esta ruta si tu carpeta se llama de otra forma
+    local proiektua_path="/home/$USER/hitzorduak"
+    local venv_path="$proiektua_path/venv"
+
+    echo "Gunicorn instalazioa egiaztatzen..."
+
+    # 1. Comprobamos si el entorno virtual existe, si no, lo creamos
+    if [ ! -d "$venv_path" ]; then
+        echo "Ingurune birtuala sortzen..."
+        python3 -m venv "$venv_path"
+    fi
+
+    # 2. Activamos el entorno virtual e instalamos gunicorn
+    # Usamos 'pip show' para ver si ya existe dentro del entorno
+    if "$venv_path/bin/pip" show gunicorn > /dev/null 2>&1; then
+        echo "Gunicorn instalatuta dago dagoeneko ingurune birtualean."
+    else
+        echo "Gunicorn ez dago instalatuta. Instalatzen..."
+        "$venv_path/bin/pip" install gunicorn
+        echo "Gunicorn ondo instalatu da."
+    fi
+}
+
+function gunicornKonfiguratu() {
+    local proiektua_path="/var/www/hitzorduak"
+    local venv_path="$proiektua_path/venv"
+
+    # 1. Crear el fichero gwsgi.py usando un Heredoc
+    echo "gwsgi.py fitxategia sortzen..."
+    sudo bash -c "cat <<EOF > $proiektua_path/gwsgi.py
+from aplikazioa import webapp
+if __name__ == \"__main__\":
+    webapp.run()
+EOF"
+
+    # 2. Ejecutar Gunicorn
+    # Nota: Usamos la ruta del binario del venv para asegurarnos de que usa el entorno correcto.
+    # El símbolo '&' al final es vital para que el script no se bloquee y pueda abrir el navegador.
+    echo "Gunicorn abiarazten 5555 portuan..."
+    cd $proiektua_path
+    sudo $venv_path/bin/gunicorn --bind 127.0.0.1:5555 gwsgi:webapp &
+    
+    # Esperamos un par de segundos para que a Gunicorn le dé tiempo a arrancar
+    sleep 2
+
+    # 3. Abrir el navegador
+    echo "Nabigatzailea irekitzen aplikazioa egiaztatzeko..."
+    firefox http://127.0.0.1:5555 &
+}
+
+function jabetasunaetabaimenakEzarri() {
+    local bidea="/var/www/hitzorduak"
+
+    echo "Baimenak eta jabetasuna konfiguratzen hemen: $bidea"
+
+    # 1. Jabetza aldatu: www-data erabiltzailea eta taldea jabe bihurtu
+    # -R bidez modu errekurtsiboan egiten da (karpeta eta fitxategi guztiak)
+    sudo chown -R www-data:www-data "$bidea"
+
+    # 2. Fitxategien baimenak ezarri (644: jabeak irakurri/idatzi, besteek irakurri)
+    sudo find "$bidea" -type f -exec chmod 644 {} +
+
+    # 3. Karpeten baimenak ezarri (755: denek irakurri/sartu, jabeak irakurri/idatzi/sartu)
+    sudo find "$bidea" -type d -exec chmod 755 {} +
+
+    echo "Jabetasuna www-data:www-data gisa ezarri da eta baimenak ondo doitu dira."
+}
+
+function systemdzerbitzuaSortu() {
+    local zerbitzua="/etc/systemd/system/hitzorduak.service"
+    local bidea="/var/www/hitzorduak"
+
+    echo "systemd zerbitzua sortzen..."
+
+    # 1. Crear el archivo de servicio usando Heredoc
+    sudo bash -c "cat <<EOF > $zerbitzua
+[Unit]
+Description=Gunicorn instance to serve hitzorduak Flask app
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=$bidea
+Environment=\"PATH=$bidea/venv/bin\"
+ExecStart=$bidea/venv/bin/gunicorn --workers 3 --bind 127.0.0.1:5555 gwsgi:webapp
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF"
+
+    # 2. Recargar systemd para que lea el nuevo archivo
+    echo "Systemd informazioa irakurtzen (daemon-reload)..."
+    sudo systemctl daemon-reload
+
+    # 3. Iniciar el servicio y habilitarlo para que arranque al inicio
+    echo "Zerbitzua martxan jartzen eta gaitzen..."
+    sudo systemctl start hitzorduak
+    sudo systemctl enable hitzorduak
+
+    # 4. Verificar el estado (deabruaren egoera)
+    echo -e "\nZerbitzua-aren egoera egiaztatzen:"
+    sudo systemctl status hitzorduak --no-pager
+}
+
+function nginxenatakaAldatu() {
+    local conf_fitxategia="/etc/nginx/conf.d/hitzorduak.conf"
+
+    echo "NGINX proxy alderantzizko gisa konfiguratzen (ataka: 4321)..."
+
+    # 1. Sortu konfigurazio fitxategia
+    sudo bash -c "cat <<EOF > $conf_fitxategia
+server {
+    listen 4321;
+    server_name localhost;
+
+    location / {
+        include proxy_params;
+        proxy_pass http://127.0.0.1:5555;
+    }
+}
+EOF"
+
+    # 2. Egiaztatu sintaxia
+    echo "NGINX sintaxia egiaztatzen..."
+    if sudo nginx -t; then
+        echo "Sintaxia zuzena da. NGINX berrabiarazten..."
+        sudo systemctl restart nginx
+    else
+        echo "ERROREA: NGINX konfigurazioak sintaxi akatsak ditu!"
+        return 1
+    fi
+}
+
+function nginxkonfiguraziofitxategiakKargatu() {
+    echo "NGINX konfigurazio-aldaketak kargatzen..."
+    
+    # Berriz kargatu konfigurazioa zerbitzua gelditu gabe
+    sudo systemctl reload nginx
+    
+    if [ $? -eq 0 ]; then
+        echo "Konfigurazioa ondo kargatu da."
+    else
+        echo "Akatsa konfigurazioa kargatzerakoan."
+    fi
+}
+
 function nginxBerrabiarazi() {
     echo "NGINX zerbitzua berrabiarazten..."
     sudo systemctl restart nginx
@@ -289,45 +534,65 @@ echo "Instalatzailearen bukaera"
 menuopt=0
 while test $menuopt -ne 26
 do
-echo -e "[ 0] Proiektu-fitxategiak paketatu eta konprimatu"
-echo -e "[ 1] mySQL kendu \n"
-echo -e "[ 2] Kokapen berria sortu \n"  
-echo -e "[ 3] Proiektua kokapen berrian kopiatu \n"
-echo -e "[ 4] MySQL instalatu \n"
-echo -e "[ 5] Datubasea konfiguratu \n"
-echo -e "[ 6] Datubasea sortu \n"
-echo -e "[ 7] Ingurune birtuala sortu \n"
-echo -e "[ 8] Liburutegiak instalatu \n"
-echo -e "[ 9] Flask zerbitzariarekin dena probatu \n"
-echo -e "[10] Nginx instalatu \n"
-echo -e "[21] nginx berrabiarazi \n"
-echo -e "[22] host birtuala probatu\n"
-echo -e "[23] nginx logak ikustatu\n"
-echo -e "[24] ekoizpen zerbitzarian kopiatu\n"
-echo -e "[25] ssh konexio saiakerak kontrolatu\n"
-echo -e "[26] Menutik irten \n"
-read -p "Zein aukera egin nahi duzu?" menuopt
-case $menuopt in
-0) proiektuaPaketatu;;
-1) mysqlKendu;;
-2) kokapenBerriaSortu hitzorduak;;
-3) proiektuaKokapenBerrianKopiatu;;
-4) mysqlInstalatu;;
-5) datubaseaKonfiguratu;;
-6) datubaseaSortu;;
-7) inguruneBirtualaSortu;;
-8) liburutegiakInstalatu;;
-9) flaskekoZerbitzariarekinDenaProbatu;;
-10) nginxInstalatu;;
-21) nginxBerrabiarazi;;
-22) hostbirtualaProbatu;;
-23)nginxlogakIkuskatu;;
-24)ekoizpenzerbitzarianKopiatu;;
-25)sshkonexiosaiakerakKontrolatu;;
-26) menutikIrten;;
-26) menutikIrten;;
-*) ;;
-esac
+    echo -e "[ 0] Proiektu-fitxategiak paketatu eta konprimatu"
+    echo -e "[ 1] mySQL kendu \n"
+    echo -e "[ 2] Kokapen berria sortu \n"  
+    echo -e "[ 3] Proiektua kokapen berrian kopiatu \n"
+    echo -e "[ 4] MySQL instalatu \n"
+    echo -e "[ 5] Datubasea konfiguratu \n"
+    echo -e "[ 6] Datubasea sortu \n"
+    echo -e "[ 7] Ingurune birtuala sortu \n"
+    echo -e "[ 8] Liburutegiak instalatu \n"
+    echo -e "[ 9] Flask zerbitzariarekin dena probatu \n"
+    echo -e "[10] Nginx instalatu \n"
+    echo -e "[11] Nginx martxan jarri \n"
+    echo -e "[12] Nginx ataka testeatu \n"
+    echo -e "[13] Index 127.0.0.1 helbidean ikusi \n"
+    echo -e "[14] Index pertsonilazatua sortu \n"
+    echo -e "[15] Gunicorn instalatu \n"
+    echo -e "[16] Gunicorn konfiguratu \n"
+    echo -e "[17] Jabetasuna aldatu \n"
+    echo -e "[18] Systemd zerbitzua sortu \n"
+    echo -e "[19] Nginxeko 4321 atakatik entzutera pasatu \n"
+    echo -e "[20] Nginxeko konfigurazio berria kargatu \n"
+    echo -e "[21] nginx berrabiarazi \n"
+    echo -e "[22] host birtuala probatu\n"
+    echo -e "[23] nginx logak ikustatu\n"
+    echo -e "[24] ekoizpen zerbitzarian kopiatu\n"
+    echo -e "[25] ssh konexio saiakerak kontrolatu\n"
+    echo -e "[26] Menutik irten \n"
+    read -p "Zein aukera egin nahi duzu?" menuopt
+    case $menuopt in
+    0) proiektuaPaketatu;;
+    1) mysqlKendu;;
+    2) kokapenBerriaSortu hitzorduak;;
+    3) proiektuaKokapenBerrianKopiatu;;
+    4) mysqlInstalatu;;
+    5) datubaseaKonfiguratu;;
+    6) datubaseaSortu;;
+    7) inguruneBirtualaSortu;;
+    8) liburutegiakInstalatu;;
+    9) flaskekoZerbitzariarekinDenaProbatu;;
+    10) nginxInstalatu;;
+    11) nginxMatxanJarri;;
+    12) nginxatakaTesteatu;;
+    13) indexIkusi;;
+    14) indexPertsonalizatu;;
+    15) gunicornInstalatu;;
+    16) gunicornKonfiguratu;;
+    17) jabetasunaetabaimenakEzarri;;
+    18) systemdzerbitzuaSortu;;
+    19) nginxenatakaAldatu;;
+    20) nginxkonfiguraziofitxategiakKargatu;;
+    21) nginxBerrabiarazi;;
+    22) hostbirtualaProbatu;;
+    23)nginxlogakIkuskatu;;
+    24)ekoizpenzerbitzarianKopiatu;;
+    25)sshkonexiosaiakerakKontrolatu;;
+    26) menutikIrten;;
+    26) menutikIrten;;
+    *) ;;
+    esac
 done
 exit 0
 

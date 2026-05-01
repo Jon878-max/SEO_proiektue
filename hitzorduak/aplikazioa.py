@@ -5,11 +5,11 @@ import os
 load_dotenv()
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
-app = Flask(__name__)
-@app.route('/')
+webapp = Flask(__name__)
+@webapp.route('/')
 def index():
     return render_template('index.html')
-@app.route('/agregar_cita/', methods=['POST'])
+@webapp.route('/agregar_cita/', methods=['POST'])
 def agregar_cita():
     if request.method == 'POST':
         nombre = request.form['nombre']
@@ -28,4 +28,4 @@ def agregar_cita():
             mensaje = "Error al insertar en la base de datos: " + str(e)
             return render_template('resultado2.html', mensaje=mensaje)
 if __name__ == '__main__':
-    app.run(debug=True)
+    webapp.run(debug=True)

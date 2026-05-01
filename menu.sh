@@ -2,8 +2,12 @@
 
 #0 Proiektu-fitxategiak paketatu eta konprimatu
 function proiektuaPaketatu() {
-cd /home/$USER/hitzorduak
-tar cvzf hitzorduak.tar.gz aplikazioa.py script.sql .env requirements.txt  templates/
+ tar cvzf /home/$USER/hitzorduak.tar.gz -C /home/$USER/hitzorduak \
+ aplikazioa.py \
+ script.sql \
+ .env \
+ requirements.txt \
+ templates/
 }
 
 #1. MySQL zerbitzua gelditu
@@ -66,10 +70,10 @@ function mysqlInstalatu() {
   sudo systemctl is-active --quiet mysql
 
   if [ $? -ne 0 ]; then
-    echo ""
+    echo "MySQL zerbitzua abiarazten..."
     sudo systemctl start mysql
   else
-    echo "MySQL ya está en ejecución"
+    echo "MySQL zerbitzua martxan dago dagoeneko."
   fi
 }
 
@@ -81,6 +85,7 @@ CREATE USER 'lsi'@'localhost' IDENTIFIED BY 'lsi';
 GRANT CREATE, ALTER, DROP, INSERT, UPDATE, INDEX, DELETE, SELECT, REFERENCES, RELOAD ON *.* TO 'lsi'@'localhost' WITH GRANT OPTION;
 FLUSH PRIVILEGES;
 EOF
+echo "MySQL erabiltzailea sortuta eta baimenak ezarrita"
 }
 
 #6. Datubasea sortu
@@ -187,47 +192,43 @@ function nginxInstalatu() {
     fi
 }
 
+#11. Nginx martxan jarri
 function nginxMatxanJarri(){
-    # systemctl is-active devuelve "active" si está funcionando
+
     if [ "$(systemctl is-active nginx)" == "active" ]; then
         echo "NGINX zerbitzua martxan dago dagoeneko."
     else
-        echo "NGINX zerbitzua ez dago martxan. Abiarazten..."
         sudo systemctl start nginx
         echo "Zerbitzua abiarazi da."
     fi
 }
 
+#12. Nginx ataka testeatu
 function nginxatakaTesteatu(){
-    # Primero nos aseguramos de que netstat (net-tools) esté instalado
     if ! dpkg -s net-tools > /dev/null 2>&1; then
         echo "net-tools instalatzen..."
         sudo apt update && sudo apt install -y net-tools
     fi
 
     echo "NGINX entzuten ari den atakak:"
-    # Buscamos procesos que escuchen (l), en formato numérico (n) y el nombre del programa (p)
     sudo netstat -tulnp | grep nginx
 }
 
+#13. Index
 function indexIkusi() {
     echo "Firefox irekitzen: http://localhost"
-    # Abrimos firefox apuntando a la dirección local
     firefox http://127.0.0.1 &
 }
 
+#14. Index pertsonalizatu
 function indexPertsonalizatu() {
-    # Definimos la ruta del archivo (Nginx suele usar esta por defecto)
     local fitxategia="/var/www/html/index.html"
     local lehenetsia="/var/www/html/index.nginx-debian.html"
 
-    # Borramos el archivo por defecto si existe para que no haya conflictos
     if [ -f "$lehenetsia" ]; then
         sudo rm "$lehenetsia"
     fi
 
-    # Creamos el nuevo index.html usando un Heredoc
-    # IMPORTANTE: Personaliza los datos de abajo
     sudo bash -c "cat <<EOF > $fitxategia
 <!DOCTYPE html>
 <html lang='eu'>
@@ -242,7 +243,7 @@ function indexPertsonalizatu() {
 </head>
 <body>
     <h1>Taldearen Izena: GG</h1>
-    <p>Laborategiko azpitaldea: <strong>Astelehena</strong></p>
+    <p>Laborategiko azpitaldea: <strong>Asteartea</strong></p>
     
     <h2>Taldekideak</h2>
     <table>
@@ -277,26 +278,16 @@ EOF"
 
     echo "index.html berria sortu da hemen: $fitxategia"
     
-    # Abrir el navegador para ver el resultado (como pide el enunciado)
     firefox http://localhost/index.html &
 }
 
+#15. Gunicorn instalatu
 function gunicornInstalatu() {
-    # Definimos la ruta de la carpeta del proyecto y el entorno virtual
-    # Ajusta esta ruta si tu carpeta se llama de otra forma
-    local proiektua_path="/home/$USER/hitzorduak"
+    local proiektua_path="/var/www/hitzorduak"
     local venv_path="$proiektua_path/venv"
 
     echo "Gunicorn instalazioa egiaztatzen..."
 
-    # 1. Comprobamos si el entorno virtual existe, si no, lo creamos
-    if [ ! -d "$venv_path" ]; then
-        echo "Ingurune birtuala sortzen..."
-        python3 -m venv "$venv_path"
-    fi
-
-    # 2. Activamos el entorno virtual e instalamos gunicorn
-    # Usamos 'pip show' para ver si ya existe dentro del entorno
     if "$venv_path/bin/pip" show gunicorn > /dev/null 2>&1; then
         echo "Gunicorn instalatuta dago dagoeneko ingurune birtualean."
     else
@@ -306,11 +297,11 @@ function gunicornInstalatu() {
     fi
 }
 
+#16. Gunicorn konfiguratu
 function gunicornKonfiguratu() {
     local proiektua_path="/var/www/hitzorduak"
     local venv_path="$proiektua_path/venv"
 
-    # 1. Crear el fichero gwsgi.py usando un Heredoc
     echo "gwsgi.py fitxategia sortzen..."
     sudo bash -c "cat <<EOF > $proiektua_path/gwsgi.py
 from aplikazioa import webapp
@@ -318,46 +309,36 @@ if __name__ == \"__main__\":
     webapp.run()
 EOF"
 
-    # 2. Ejecutar Gunicorn
-    # Nota: Usamos la ruta del binario del venv para asegurarnos de que usa el entorno correcto.
-    # El símbolo '&' al final es vital para que el script no se bloquee y pueda abrir el navegador.
     echo "Gunicorn abiarazten 5555 portuan..."
-    cd $proiektua_path
-    sudo $venv_path/bin/gunicorn --bind 127.0.0.1:5555 gwsgi:webapp &
-    
-    # Esperamos un par de segundos para que a Gunicorn le dé tiempo a arrancar
-    sleep 2
+    cd "$proiektua_path" || return 1
+    "$venv_path/bin/gunicorn" --bind 127.0.0.1:5555 gwsgi:webapp &
 
-    # 3. Abrir el navegador
-    echo "Nabigatzailea irekitzen aplikazioa egiaztatzeko..."
+    sleep 2
     firefox http://127.0.0.1:5555 &
 }
 
+# 17. Jabetasuna aldatu
 function jabetasunaetabaimenakEzarri() {
     local bidea="/var/www/hitzorduak"
 
     echo "Baimenak eta jabetasuna konfiguratzen hemen: $bidea"
 
-    # 1. Jabetza aldatu: www-data erabiltzailea eta taldea jabe bihurtu
-    # -R bidez modu errekurtsiboan egiten da (karpeta eta fitxategi guztiak)
     sudo chown -R www-data:www-data "$bidea"
 
-    # 2. Fitxategien baimenak ezarri (644: jabeak irakurri/idatzi, besteek irakurri)
-    sudo find "$bidea" -type f -exec chmod 644 {} +
-
-    # 3. Karpeten baimenak ezarri (755: denek irakurri/sartu, jabeak irakurri/idatzi/sartu)
     sudo find "$bidea" -type d -exec chmod 755 {} +
+    sudo find "$bidea" -type f -not -path "$bidea/venv/bin/*" -exec chmod 644 {} +
+    sudo chmod -R 755 "$bidea/venv/bin"
 
-    echo "Jabetasuna www-data:www-data gisa ezarri da eta baimenak ondo doitu dira."
+    echo "Jabetasuna eta baimenak ondo ezarri dira."
 }
 
+#18. Systemd zerbitzua sortu
 function systemdzerbitzuaSortu() {
     local zerbitzua="/etc/systemd/system/hitzorduak.service"
     local bidea="/var/www/hitzorduak"
 
     echo "systemd zerbitzua sortzen..."
 
-    # 1. Crear el archivo de servicio usando Heredoc
     sudo bash -c "cat <<EOF > $zerbitzua
 [Unit]
 Description=Gunicorn instance to serve hitzorduak Flask app
@@ -368,33 +349,30 @@ User=www-data
 Group=www-data
 WorkingDirectory=$bidea
 Environment=\"PATH=$bidea/venv/bin\"
-ExecStart=$bidea/venv/bin/gunicorn --workers 3 --bind 127.0.0.1:5555 gwsgi:webapp
+ExecStart=$bidea/venv/bin/python -m gunicorn --workers 3 --bind 127.0.0.1:5555 gwsgi:webapp
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 EOF"
 
-    # 2. Recargar systemd para que lea el nuevo archivo
     echo "Systemd informazioa irakurtzen (daemon-reload)..."
     sudo systemctl daemon-reload
 
-    # 3. Iniciar el servicio y habilitarlo para que arranque al inicio
     echo "Zerbitzua martxan jartzen eta gaitzen..."
     sudo systemctl start hitzorduak
     sudo systemctl enable hitzorduak
 
-    # 4. Verificar el estado (deabruaren egoera)
     echo -e "\nZerbitzua-aren egoera egiaztatzen:"
     sudo systemctl status hitzorduak --no-pager
 }
 
+#19. Nginxeko 4321 atakatik entzutera pasatu
 function nginxenatakaAldatu() {
     local conf_fitxategia="/etc/nginx/conf.d/hitzorduak.conf"
 
     echo "NGINX proxy alderantzizko gisa konfiguratzen (ataka: 4321)..."
 
-    # 1. Sortu konfigurazio fitxategia
     sudo bash -c "cat <<EOF > $conf_fitxategia
 server {
     listen 4321;
@@ -407,7 +385,6 @@ server {
 }
 EOF"
 
-    # 2. Egiaztatu sintaxia
     echo "NGINX sintaxia egiaztatzen..."
     if sudo nginx -t; then
         echo "Sintaxia zuzena da. NGINX berrabiarazten..."
@@ -418,6 +395,7 @@ EOF"
     fi
 }
 
+#20. NGINX konfigurazio-aldaketak kargatu
 function nginxkonfiguraziofitxategiakKargatu() {
     echo "NGINX konfigurazio-aldaketak kargatzen..."
     
@@ -431,28 +409,20 @@ function nginxkonfiguraziofitxategiakKargatu() {
     fi
 }
 
+#21. NGINX zerbitzua berrabiarazi
 function nginxBerrabiarazi() {
     echo "NGINX zerbitzua berrabiarazten..."
     sudo systemctl restart nginx
-    
-    # Opcional: Verificar si arrancó correctamente
-    if [ $? -eq 0 ]; then
-        echo "NGINX ondo berrabiarazi da."
-    else
-        echo "Errorea NGINX berrabiaraztean."
-    fi
 }
-
+#22. Host birtuala probatu
 function hostbirtualaProbatu() {
     echo "Web-nabigatzailea irekitzen: http://127.0.0.1:4321"
-    # xdg-open permite abrir la URL en el navegador por defecto del sistema
-    xdg-open "http://127.0.0.1:4321"
+    firefox "http://127.0.0.1:4321"
 }
-
+#23. NGINX logak ikustatu
 function nginxlogakIkuskatu() {
     echo -e "\n--- NGINX ERRORE LOGAK (Azken 10 lerroak) ---"
     
-    # Comprobamos si el archivo existe antes de leerlo para evitar errores
     if [ -f /var/log/nginx/error.log ]; then
         sudo tail -n 10 /var/log/nginx/error.log
     else
@@ -461,10 +431,10 @@ function nginxlogakIkuskatu() {
     echo -e "-------------------------------------------\n"
 }
 
+#24. Ekoizpen zerbitzarian kopiatu
 function ekoizpenzerbitzarianKopiatu() {
     echo -e "\n=== Ekoizpen zerbitzarian kopiatzen ==="
     
-    # ssh (openssh-server) paketea instalatuko du, instalatuta ez badago.
     if ! dpkg -s openssh-server > /dev/null 2>&1; then
         echo "openssh-server paketea ez dago instalatuta. Instalatzen..."
         sudo apt update
@@ -473,7 +443,6 @@ function ekoizpenzerbitzarianKopiatu() {
         echo "openssh-server paketea instalatuta dago."
     fi
 
-    # ssh zerbitzua martxan ez badago, abiarazi
     if [ "$(systemctl is-active ssh)" != "active" ]; then
         echo "SSH zerbitzua ez dago martxan. Abiarazten..."
         sudo systemctl start ssh
@@ -481,10 +450,8 @@ function ekoizpenzerbitzarianKopiatu() {
         echo "SSH zerbitzua martxan dago dagoeneko."
     fi
 
-    # Zerbitzariaren IP-a eskatu
     read -p "Sartu urruneko zerbitzariaren IP helbidea: " ip
     
-    # scp bidez fitxategiak kopiatu (tar.gz eta menu.sh script-a)
     echo "Fitxategiak urruneko zerbitzarira ($ip) kopiatzen..."
     scp /home/$USER/hitzorduak.tar.gz menu.sh $USER@$ip:~
     
@@ -495,16 +462,14 @@ function ekoizpenzerbitzarianKopiatu() {
     echo "bash -x menu.sh"
     echo "-----------------------------------"
     
-    # Menu-tik irten argibideak jarraituz
     exit 0
 }
 
+#25. SSH bidezko konexio-saiakerak kontrolatu
 function sshkonexiosaiakerakKontrolatu() {
     echo -e "\n=== SSH bidezko konexio-saiakerak aztertzen ==="
     echo -e "Informazioa lortzen... (baliteke sudo baimenak behar izatea log-ak irakurtzeko)\n"
 
-    # zgrep erabiltzen dugu fitxategi guztiak (testu arrunta eta .gz) aldi berean arakatzeko
-    # "sshd" duten lerroak iragazten ditugu, eta "Failed password" edo "Accepted password" dutenak
     sudo zgrep -h "sshd" /var/log/auth.log* | grep -E "Failed password|Accepted password" | while read -r line; do
         
         # Data erauzi (Lehenengo zatia: urtea-hilabetea-eguna formatuan baldin badago)
@@ -589,7 +554,6 @@ do
     23)nginxlogakIkuskatu;;
     24)ekoizpenzerbitzarianKopiatu;;
     25)sshkonexiosaiakerakKontrolatu;;
-    26) menutikIrten;;
     26) menutikIrten;;
     *) ;;
     esac

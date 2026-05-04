@@ -20,7 +20,6 @@ mysql-server \
 mysql-client \
 mysql-common \
 mysql-server-core-* \
-
 mysql-client-core-*
 #Ezabatu beharrezkoak ez diren paketeak
 sudo apt autoremove
@@ -42,6 +41,7 @@ sudo chown -R $USER:$USER /var/www/"$1"
 
 #3. Proiektua kokapen berrian kopiatu
 function proiektuaKokapenBerrianKopiatu() {
+  echo "proiektua kopiatzen /var/www/hitzorduak karpetan"
   if [ ! -f /home/$USER/hitzorduak.tar.gz ]; then
     echo "ez da existitzen /home/$USER/hitzorduak.tar.gz"
     return 1
@@ -67,14 +67,14 @@ function mysqlInstalatu() {
         echo "MySQL badago instalatuta"
     fi
 
-  sudo systemctl is-active --quiet mysql
+    sudo systemctl is-active --quiet mysql
 
-  if [ $? -ne 0 ]; then
-    echo "MySQL zerbitzua abiarazten..."
-    sudo systemctl start mysql
-  else
-    echo "MySQL zerbitzua martxan dago dagoeneko."
-  fi
+    if [ $? -ne 0 ]; then
+        echo "MySQL zerbitzua abiarazten..."
+        sudo systemctl start mysql
+    else
+        echo "MySQL zerbitzua martxan dago dagoeneko."
+    fi
 }
 
 #5. Datubasea konfiguratu
@@ -90,57 +90,41 @@ echo "MySQL erabiltzailea sortuta eta baimenak ezarrita"
 
 #6. Datubasea sortu
 function datubaseaSortu() {
-  mysql -u lsi -plsi < /var/www/hitzorduak/script.sql
-  echo "Datubasea eta taula sortuta"
+    echo "Datubasea sortzen..."
+    mysql -u lsi -plsi < /var/www/hitzorduak/script.sql
+    echo "Datubasea eta taula sortuta"
 }
 
 #7. Ingurune birtuala sortu
 function inguruneBirtualaSortu() {
 
-  sudo apt update
-  
-  sudo apt install python3-pip
-
-  sudo apt install python3-dev build-essential libssl-dev libffi-dev python3-setuptools
-
-  sudo apt install python3-venv
-
-  echo "Python3 eta beharrezko paketeak instalatuta"
-
-  cd /var/www/hitzorduak
-
-  python3 -m venv venv
-  
-  source venv/bin/activate
-
-  echo "Ingurune birtuala sortuta eta aktibatuta"
+    echo "Ingurune birtuala sortzen..."
+    echo "Python3 eta beharrezko paketeak instalatzen..."
+    sudo apt update
+    sudo apt install python3-pip
+    sudo apt install python3-dev build-essential libssl-dev libffi-dev python3-setuptools
+    sudo apt install python3-venv
+    echo "Python3 eta beharrezko paketeak instalatuta"
+    cd /var/www/hitzorduak
+    echo "Ingurune birtuala sortzen..."
+    python3 -m venv venv
+    echo "Ingurune birtuala sortuta"
+    source venv/bin/activate
+    echo "Ingurune birtuala sortuta eta aktibatuta"
 
 }
 
 #8. Liburutegiak instalatu
 function liburutegiakInstalatu() {
-
-    if [ ! -d "/var/www/hitzorduak/venv" ]; then
-        echo "Errorea: ez da aurkitu ingurune birtuala: $PROIEKTUA/venv"
-        return 1
-    fi
-
-    if [ ! -f "/var/www/hitzorduak/requirements.txt" ]; then
-        echo "Errorea: ez da aurkitu requirements.txt fitxategia"
-        return 1
-    fi
-
+    
+    echo "Liburutegiak instalatzen..."
     cd "/var/www/hitzorduak" 
-
     echo "Python ingurune birtuala aktibatzen..."
     source venv/bin/activate
-
     echo "pip eguneratzen..."
     pip install --upgrade pip
-
     echo "requirements.txt fitxategiko liburutegiak instalatzen..."
     pip install -r requirements.txt
-
     echo "Liburutegiak behar bezala instalatu dira."
 }
 
@@ -159,18 +143,12 @@ function flaskekoZerbitzariarekinDenaProbatu() {
     fi
 
     cd "$PROIEKTUA" || return 1
-
     echo "Ingurune birtuala aktibatzen..."
     source venv/bin/activate
-
     echo "Flask zerbitzaria martxan jartzen..."
     python3 aplikazioa.py &
-
-    sleep 2
-
     echo "Nabigatzailea irekitzen..."
     firefox http://127.0.0.1:5000
-
     echo "Flask garapen zerbitzaria martxan dago:"
     echo "http://127.0.0.1:5000"
 }
@@ -195,8 +173,8 @@ function nginxInstalatu() {
 #11. Nginx martxan jarri
 function nginxMatxanJarri(){
 
-    if [ "$(systemctl is-active nginx)" == "active" ]; then
-        echo "NGINX zerbitzua martxan dago dagoeneko."
+    if systemctl is-active -q nginx; then
+        echo "NGINX zerbitzua martxan dago."
     else
         sudo systemctl start nginx
         echo "Zerbitzua abiarazi da."
@@ -283,18 +261,8 @@ EOF"
 
 #15. Gunicorn instalatu
 function gunicornInstalatu() {
-    local proiektua_path="/var/www/hitzorduak"
-    local venv_path="$proiektua_path/venv"
-
-    echo "Gunicorn instalazioa egiaztatzen..."
-
-    if "$venv_path/bin/pip" show gunicorn > /dev/null 2>&1; then
-        echo "Gunicorn instalatuta dago dagoeneko ingurune birtualean."
-    else
-        echo "Gunicorn ez dago instalatuta. Instalatzen..."
-        "$venv_path/bin/pip" install gunicorn
-        echo "Gunicorn ondo instalatu da."
-    fi
+    source /var/www/hitzorduak/venv/bin/activate
+    pip install gunicorn
 }
 
 #16. Gunicorn konfiguratu
@@ -309,6 +277,11 @@ if __name__ == \"__main__\":
     webapp.run()
 EOF"
 
+     if sudo ss -tulnp | grep -q ":5555"; then
+        echo "Gunicorn dagoeneko martxan dago 5555 portuan."
+        return 0
+    fi
+
     echo "Gunicorn abiarazten 5555 portuan..."
     cd "$proiektua_path" || return 1
     "$venv_path/bin/gunicorn" --bind 127.0.0.1:5555 gwsgi:webapp &
@@ -319,17 +292,10 @@ EOF"
 
 # 17. Jabetasuna aldatu
 function jabetasunaetabaimenakEzarri() {
-    local bidea="/var/www/hitzorduak"
-
-    echo "Baimenak eta jabetasuna konfiguratzen hemen: $bidea"
-
-    sudo chown -R www-data:www-data "$bidea"
-
-    sudo find "$bidea" -type d -exec chmod 755 {} +
-    sudo find "$bidea" -type f -not -path "$bidea/venv/bin/*" -exec chmod 644 {} +
-    sudo chmod -R 755 "$bidea/venv/bin"
-
-    echo "Jabetasuna eta baimenak ondo ezarri dira."
+    echo "Jabetasuna eta baimenak ezartzen /var/www/hitzorduak karpetan..."
+    sudo chown -R www-data:www-data /var/www/hitzorduak
+    sudo chmod -R 755 /var/www/hitzorduak 
+    echo "Jabetasuna eta baimenak ezarrita."    
 }
 
 #18. Systemd zerbitzua sortu
